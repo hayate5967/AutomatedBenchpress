@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bench Press Judge</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
+        h1 { margin-bottom: 40px; }
+        #status { font-size: 1.2rem; margin: 20px; color: #aaa; }
+        #connectBtn {
+            padding: 15px 30px; font-size: 1.2rem; background-color: #007bff; 
+            color: white; border: none; border-radius: 50px; cursor: pointer;
+        }
+        #message { font-size: 3rem; font-weight: bold; margin-top: 50px; color: #ff4757; }
+    </style>
+</head>
+<body>
+
+    <h1>🏋️‍♂️ Bench Press Judge</h1>
+    <p id="status">デバイス未接続</p>
+    <button id="connectBtn" onclick="connectBluetooth()">CONNECT</button>
+    <div id="message"></div>
+
+    <script>
+        // ESP32で設定したUUIDと同じもの
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        let device;
+        let characteristic;
+
+        async function connectBluetooth() {
+            try {
+                document.getElementById('status').innerText = "検索中...";
+                
+                // 1. デバイスを探す
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'BenchPressMonitor' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                // 2. 接続する
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                characteristic = await service.getCharacteristic(CHAR_UUID);
+
+                // 3. 通知を受け取る設定
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+
+                document.getElementById('status').innerText = "接続完了！判定待機中...";
+                document.getElementById('connectBtn').style.display = 'none';
+                
+                // 接続確認の音声
+                speak("Connected");
+
+                // 切断時の処理
+                device.addEventListener('gattserverdisconnected', () => {
+                    document.getElementById('status').innerText = "切断されました";
+                    document.getElementById('connectBtn').style.display = 'inline-block';
+                });
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('status').innerText = "エラー: " + error;
+            }
+        }
+
+        // 通知が来た時の処理
+        function handleNotifications(event) {
+            const value = new TextDecoder().decode(event.target.value);
+            console.log("Received:", value);
+
+            if (value.includes("PRESS")) {
+                document.getElementById('message').innerText = "PRESS!!!";
+                speak("プレス！"); // ここで喋る
+                
+                // 3秒後に表示を消す
+                setTimeout(() => {
+                    document.getElementById('message').innerText = "";
+                }, 3000);
+            }
+        }
+
+        // 音声合成（読み上げ）機能
+        function speak(text) {
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.lang = "ja-JP"; // 日本語設定
+            uttr.rate = 1.2;     // 少し早口
+            uttr.pitch = 1.0;
+            window.speechSynthesis.speak(uttr);
+        }
+    </script>
+</body>
+</html>
