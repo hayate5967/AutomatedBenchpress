@@ -3,92 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bench Press Judge</title>
+    <title>Bench Press Judge Pro</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
-        h1 { margin-bottom: 40px; }
-        #status { font-size: 1.2rem; margin: 20px; color: #aaa; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 20px; background-color: #1a1a1a; color: white; }
+        
+        /* 接続ボタン */
         #connectBtn {
-            padding: 15px 30px; font-size: 1.2rem; background-color: #007bff; 
-            color: white; border: none; border-radius: 50px; cursor: pointer;
+            padding: 15px 40px; font-size: 1.2rem; background-color: #007bff; 
+            color: white; border: none; border-radius: 50px; cursor: pointer; margin-bottom: 20px;
         }
-        #message { font-size: 3rem; font-weight: bold; margin-top: 50px; color: #ff4757; }
+        
+        /* 設定エリア */
+        .settings-box {
+            background-color: #333; padding: 20px; border-radius: 15px;
+            margin: 20px auto; max-width: 300px;
+            border: 1px solid #555;
+        }
+        input[type="number"] {
+            font-size: 1.5rem; width: 80px; padding: 5px; text-align: center;
+            border-radius: 5px; border: none;
+        }
+        button.set-btn {
+            background-color: #28a745; color: white; border: none; padding: 10px 20px;
+            font-size: 1rem; border-radius: 5px; margin-left: 10px; cursor: pointer;
+        }
+
+        /* 判定表示 */
+        #message { font-size: 4rem; font-weight: 800; margin-top: 30px; color: #ff4757; min-height: 80px;}
+        #current-setting { color: #888; margin-top: 5px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
     <h1>🏋️‍♂️ Bench Press Judge</h1>
+    
+    <button id="connectBtn" onclick="connectBluetooth()">CONNECT DEVICE</button>
     <p id="status">デバイス未接続</p>
-    <button id="connectBtn" onclick="connectBluetooth()">CONNECT</button>
+
+    <div class="settings-box" id="settingsArea" style="opacity: 0.5; pointer-events: none;">
+        <h3>止める秒数 (秒)</h3>
+        <div>
+            <input type="number" id="secInput" value="0.6" step="0.1" min="0.1" max="5.0">
+            <button class="set-btn" onclick="updateTime()">変更</button>
+        </div>
+        <p id="current-setting">現在の設定: 0.6秒</p>
+    </div>
+
     <div id="message"></div>
 
     <script>
-        // ESP32で設定したUUIDと同じもの
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-        let device;
-        let characteristic;
+        let device, characteristic;
 
         async function connectBluetooth() {
             try {
                 document.getElementById('status').innerText = "検索中...";
                 
-                // 1. デバイスを探す
                 device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'BenchPressMonitor' }],
-                    optionalServices: [SERVICE_UUID]
+                    filters: [{ services: [SERVICE_UUID] }] // UUIDで検索
                 });
 
-                // 2. 接続する
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 characteristic = await service.getCharacteristic(CHAR_UUID);
 
-                // 3. 通知を受け取る設定
+                // 通知の開始
                 await characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', handleNotifications);
 
-                document.getElementById('status').innerText = "接続完了！判定待機中...";
+                // UI更新
+                document.getElementById('status').innerText = "接続完了！";
                 document.getElementById('connectBtn').style.display = 'none';
+                document.getElementById('settingsArea').style.opacity = '1';
+                document.getElementById('settingsArea').style.pointerEvents = 'auto';
                 
-                // 接続確認の音声
                 speak("Connected");
 
-                // 切断時の処理
                 device.addEventListener('gattserverdisconnected', () => {
                     document.getElementById('status').innerText = "切断されました";
                     document.getElementById('connectBtn').style.display = 'inline-block';
+                    document.getElementById('settingsArea').style.opacity = '0.5';
+                    document.getElementById('settingsArea').style.pointerEvents = 'none';
                 });
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('status').innerText = "エラー: " + error;
+                alert("接続エラー: " + error);
             }
         }
 
-        // 通知が来た時の処理
+        // ESP32へ秒数を送信する関数
+        async function updateTime() {
+            if (!characteristic) return;
+
+            const sec = document.getElementById('secInput').value;
+            const ms = Math.floor(sec * 1000); // 0.6 -> 600
+
+            try {
+                // 文字列として送信 (例: "1000")
+                const encoder = new TextEncoder();
+                await characteristic.writeValue(encoder.encode(String(ms)));
+                
+                document.getElementById('current-setting').innerText = `現在の設定: ${sec}秒`;
+                speak(`${sec}秒に設定しました`);
+                
+            } catch (err) {
+                alert("送信失敗: " + err);
+            }
+        }
+
         function handleNotifications(event) {
             const value = new TextDecoder().decode(event.target.value);
-            console.log("Received:", value);
-
             if (value.includes("PRESS")) {
                 document.getElementById('message').innerText = "PRESS!!!";
-                speak("プレス！"); // ここで喋る
-                
-                // 3秒後に表示を消す
-                setTimeout(() => {
-                    document.getElementById('message').innerText = "";
-                }, 3000);
+                speak("プレス！");
+                setTimeout(() => { document.getElementById('message').innerText = ""; }, 3000);
             }
         }
 
-        // 音声合成（読み上げ）機能
         function speak(text) {
             const uttr = new SpeechSynthesisUtterance(text);
-            uttr.lang = "ja-JP"; // 日本語設定
-            uttr.rate = 1.2;     // 少し早口
-            uttr.pitch = 1.0;
+            uttr.lang = "ja-JP"; 
+            uttr.rate = 1.2;
             window.speechSynthesis.speak(uttr);
         }
     </script>
