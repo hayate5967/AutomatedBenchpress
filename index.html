@@ -62,8 +62,9 @@
                 document.getElementById('status').innerText = "検索中...";
                 
                 device = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: [SERVICE_UUID] }] // UUIDで検索
-                });
+                filters: [{ name: 'BenchPressMonitor' }],
+                optionalServices: [SERVICE_UUID]
+                 });
 
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
@@ -132,3 +133,4 @@
     </script>
 </body>
 </html>
+
