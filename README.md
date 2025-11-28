@@ -9,7 +9,7 @@
 
 * **Real-time Stillness Detection:** 3軸加速度の合成ベクトルと分散を監視し、競技ルールに準拠した「胸上での静止」を検知。
 * **Low Latency Feedback:** BLE (GATT) 通知を使用し、判定から0.1秒以内にスマートフォン側で音声コマンドを再生。
-* **Bi-directional Control:** Webブラウザから判定までの「静止時間」を変更可能。
+* **Bi-directional Control:** Webブラウザから、「静止時間」の変更が可能。
 * **Serverless Architecture:** 専用アプリやバックエンドサーバーを必要とせず、ブラウザのみで完結（PWA対応）。
 
 ## Tech Stack
@@ -80,4 +80,5 @@ AutomatedBenchpress/
 * バーベルにしっかり固定するための専用アタッチメントの作成(3Dプリンタなど)。
 
 　　
+
 
