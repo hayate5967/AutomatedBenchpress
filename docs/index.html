@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bench Press Monitor</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --accent-color: #e74c3c;
+            --secondary-color: #333;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            text-align: center;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        .container { max-width: 400px; width: 100%; }
+        
+        button {
+            background-color: #2980b9;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        button:active { opacity: 0.8; }
+        
+        .settings-panel {
+            background-color: var(--secondary-color);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-top: 2rem;
+            transition: opacity 0.3s;
+        }
+        
+        .input-group {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        input[type="number"] {
+            padding: 0.5rem;
+            border-radius: 6px;
+            border: none;
+            width: 80px;
+            text-align: center;
+            font-size: 1.2rem;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            width: auto;
+            margin: 0;
+            background-color: #27ae60;
+        }
+
+        .status-display {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: var(--accent-color);
+            min-height: 80px;
+            margin-top: 2rem;
+        }
+
+        .disabled { opacity: 0.5; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bench Press Monitor</h1>
+        
+        <button id="connectBtn">Connect Device</button>
+        <div id="connectionStatus">Disconnected</div>
+
+        <div id="settingsPanel" class="settings-panel disabled">
+            <label>Hold Duration (sec)</label>
+            <div class="input-group">
+                <input type="number" id="durationInput" value="0.6" step="0.1" min="0.1" max="5.0">
+                <button id="updateBtn" class="btn-small">Update</button>
+            </div>
+            <div id="currentSetting">Current: 0.6s</div>
+        </div>
+
+        <div id="feedbackDisplay" class="status-display"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        // Global State
+        let deviceHandle = null;
+        let charHandle = null;
+
+        // --- Bluetooth Logic ---
+        
+        async function connectDevice() {
+            try {
+                updateStatus("Scanning...");
+                
+                // Request device matching the name
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'BenchPressMonitor' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                charHandle = await service.getCharacteristic(CHAR_UUID);
+
+                // Setup Notification
+                await charHandle.startNotifications();
+                charHandle.addEventListener('characteristicvaluechanged', handleNotification);
+
+                // Handle Disconnection
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+
+                // Update UI
+                onConnected();
+                
+            } catch (error) {
+                console.error("Connection failed", error);
+                updateStatus(`Error: ${error.message}`);
+            }
+        }
+
+        function handleNotification(event) {
+            const value = new TextDecoder().decode(event.target.value);
+            if (value.includes("PRESS")) {
+                triggerFeedback();
+            }
+        }
+
+        async function updateDuration() {
+            if (!charHandle) return;
+
+            const seconds = document.getElementById('durationInput').value;
+            const milliseconds = Math.floor(seconds * 1000);
+
+            try {
+                const encoder = new TextEncoder();
+                await charHandle.writeValue(encoder.encode(String(milliseconds)));
+                
+                document.getElementById('currentSetting').innerText = `Current: ${seconds}s`;
+                speak(`${seconds} seconds set`);
+            } catch (error) {
+                console.error("Write failed", error);
+                alert("Failed to update settings.");
+            }
+        }
+
+        function onDisconnected() {
+            deviceHandle = null;
+            charHandle = null;
+            updateStatus("Disconnected");
+            document.getElementById('connectBtn').style.display = 'block';
+            document.getElementById('settingsPanel').classList.add('disabled');
+        }
+
+        function onConnected() {
+            updateStatus("Connected");
+            speak("Device connected");
+            document.getElementById('connectBtn').style.display = 'none';
+            document.getElementById('settingsPanel').classList.remove('disabled');
+        }
+
+        // --- UI & Feedback Logic ---
+
+        function triggerFeedback() {
+            const display = document.getElementById('feedbackDisplay');
+            display.innerText = "PRESS!";
+            speak("Press!");
+            
+            // Clear message after 3 seconds
+            setTimeout(() => {
+                display.innerText = "";
+            }, 3000);
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const uttr = new SpeechSynthesisUtterance(text);
+                uttr.lang = "en-US"; // Or "ja-JP"
+                uttr.rate = 1.2;
+                window.speechSynthesis.speak(uttr);
+            }
+        }
+
+        function updateStatus(msg) {
+            document.getElementById('connectionStatus').innerText = msg;
+        }
+
+        // Event Listeners
+        document.getElementById('connectBtn').addEventListener('click', connectDevice);
+        document.getElementById('updateBtn').addEventListener('click', updateDuration);
+    </script>
+</body>
+</html>
